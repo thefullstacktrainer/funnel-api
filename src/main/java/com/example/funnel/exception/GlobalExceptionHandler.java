@@ -1,20 +1,28 @@
 package com.example.funnel.exception;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.HashMap;
+import java.util.Map;
 
 @ControllerAdvice
 public class GlobalExceptionHandler {
 
-    @ExceptionHandler(InvalidInputException.class)
-    public ResponseEntity<ErrorResponse> handleInvalid(InvalidInputException ex) {
-        ErrorResponse err = new ErrorResponse("INVALID_INPUT", ex.getMessage());
-        return ResponseEntity.badRequest().body(err);
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Map<String, String>> handleInvalidInput(IllegalArgumentException ex) {
+        Map<String, String> error = new HashMap<>();
+        error.put("error", "INVALID_INPUT");
+        error.put("message", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
     }
 
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ErrorResponse> handleAll(Exception ex) {
-        ErrorResponse err = new ErrorResponse("INTERNAL_ERROR", ex.getMessage());
-        return ResponseEntity.status(500).body(err);
+    public ResponseEntity<Map<String, String>> handleGeneric(Exception ex) {
+        Map<String, String> error = new HashMap<>();
+        error.put("error", "SERVER_ERROR");
+        error.put("message", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
     }
 }

@@ -1,73 +1,64 @@
 package com.example.funnel.service;
 
-import com.example.funnel.dto.*;
-import com.example.funnel.model.*;
-import com.example.funnel.exception.*;
-import com.example.funnel.event.*;
-import org.springframework.context.ApplicationEventPublisher;
+import com.example.funnel.dto.FunnelRequest;
+import com.example.funnel.dto.StageRequest;
+import com.example.funnel.model.Funnel;
+import com.example.funnel.model.Stage;
+import com.example.funnel.repository.FunnelRepository;
 import org.springframework.stereotype.Service;
-import io.micrometer.core.instrument.MeterRegistry;
 
-import java.time.Instant;
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 public class FunnelService {
 
-    private final Map<String, Funnel> store = new ConcurrentHashMap<>();
-    private final ApplicationEventPublisher publisher;
-    private final MeterRegistry meterRegistry; // for metrics (actuator + micrometer)
+    private final FunnelRepository funnelRepository;
 
-    public FunnelService(ApplicationEventPublisher publisher, MeterRegistry meterRegistry) {
-        this.publisher = publisher;
-        this.meterRegistry = meterRegistry;
+    public FunnelService(FunnelRepository funnelRepository) {
+        this.funnelRepository = funnelRepository;
     }
 
-    public Funnel createFunnel(FunnelRequest req) {
-        validate(req);
-
-        String id = "funnel_" + UUID.randomUUID();
-        Funnel f = new Funnel();
-        f.setId(id);
-        f.setName(req.getName());
-        f.setDescription(req.getDescription());
-        f.setFilter(req.getFilter());
-        f.setStatus("CREATED");
-        f.setCreatedAt(Instant.now());
-
-        List<Stage> stages = new ArrayList<>();
-        for (StageRequest sr : req.getStages()) {
-            Stage s = new Stage();
-            s.setOrder(sr.getOrder());
-            s.setName(sr.getName());
-            s.setType(sr.getType());
-            stages.add(s);
+    public Funnel createFunnel(FunnelRequest request) {
+        if (request.getStages() == null || request.getStages().size() != 5) {
+            throw new IllegalArgumentException("Funnel must contain exactly 5 stages");
         }
-        f.setStages(stages);
 
-        store.put(id, f);
-
-        // metric - increments a named counter (requires actuator + micrometer on classpath)
-        try { meterRegistry.counter("funnels.created").increment(); } catch (Exception ignored) {}
-
-        // publish event
-        publisher.publishEvent(new FunnelCreatedEvent(this, id, Instant.now()));
-
-        return f;
-    }
-
-    private void validate(FunnelRequest req) {
-        if (req.getStages() == null || req.getStages().size() != 5) {
-            throw new InvalidInputException("Funnel must contain exactly 5 stages");
-        }
-        // optional: check for unique orders 1..5
-        Set<Integer> orders = new HashSet<>();
-        for (StageRequest s : req.getStages()) {
-            orders.add(s.getOrder());
-        }
+        Set<Integer> orders = request.getStages().stream()
+                .map(StageRequest::getOrder)
+                .collect(Collectors.toSet());
         if (orders.size() != 5) {
-            throw new InvalidInputException("Stages must have unique orders");
+            throw new IllegalArgumentException("Stages must have unique orders");
         }
+
+        Funnel funnel = new Funnel();
+        funnel.setName(request.getName());
+        funnel.setDescription(request.getDescription());
+        funnel.setFilter(request.getFilter());
+        funnel.setCreatedAt(LocalDateTime.now());
+        funnel.setStatus("CREATED");
+
+        List<Stage> stages = request.getStages().stream().map(s -> {
+            Stage stage = new Stage();
+            stage.setStageOrder(s.getOrder());
+            stage.setName(s.getName());
+            stage.setType(s.getType());
+            stage.setFunnel(funnel);
+            return stage;
+        }).collect(Collectors.toList());
+
+        funnel.setStages(stages);
+        return funnelRepository.save(funnel);
+    }
+
+    public List<Funnel> getAllFunnels() {
+        return funnelRepository.findAll();
+    }
+
+    public Funnel getFunnelById(Long id) {
+        return funnelRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Funnel not found with id " + id));
     }
 }
